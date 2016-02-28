@@ -1,1 +1,1 @@
-{"version": "0.3.1", "title": "mqtt", "copyright": "Viper Team", "files": [ [ "mqtt", "mqtt.py" ] ] }
+{"version": "1.0.0", "title": "mqtt", "copyright": "Zerynth Team", "files": [ [ "mqtt", "mqtt.py" ] ] }
