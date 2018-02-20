@@ -1,27 +1,28 @@
 ################################################################################
-# mqtt test
+# MQTT at mosquitto.org
 #
 # Created: 2015-10-15 21:37:25.886276
 #
 ################################################################################
 
 import streams
-import mqtt
+from mqtt import mqtt
 from wireless import wifi
 
 # the wifi module needs a networking driver to be loaded
-# in order to control the board hardware.
+# in order to control the device hardware.
 # FOR THIS EXAMPLE TO WORK, A NETWORK DRIVER MUST BE SELECTED BELOW
 
-# uncomment the following line to use the CC3000 driver (Particle Core or CC3000 Wifi shields)
-# from cc3000 import cc3000 as wifi_driver
+# uncomment one of the following lines depending on used board 
+# (e.g. Particle Photon, esp8266 based board, esp32 based board)
 
-# uncomment the following line to use the BCM43362 driver (Particle Photon)
-# from bcm43362 import bcm43362 as wifi_driver
+# from broadcom.bcm43362 import bcm43362 as wifi_driver
+# from espressif.esp32net import esp32wifi as wifi_driver
+# from espressif.esp8266wifi import esp8266wifi as wifi_driver
 
 # init the wifi driver!
 # The driver automatically registers itself to the wifi interface
-# with the correct configuration for the selected board
+# with the correct configuration for the selected device
 wifi_driver.auto_init()
 
 
@@ -64,8 +65,8 @@ def publish_to_self():
 
 
 try:
-    # set the mqqt id to "vipermqtt"
-    client = mqtt.Client("vipermqtt",True)
+    # set the mqtt id to "zerynth-mqtt"
+    client = mqtt.Client("zerynth-mqtt",True)
     # and try to connect to "test.mosquitto.org"
     for retry in range(10):
         try:
@@ -78,7 +79,7 @@ try:
     client.subscribe([["desktop/samples",1]])
     client.subscribe([["desktop/others",2]])
     # configure callbacks for "PUBLISH" message
-    client.on("PUBLISH",print_sample,is_sample)
+    client.on(mqtt.PUBLISH,print_sample,is_sample)
     # start the mqtt loop
     client.loop(print_other)
     # Every 3 seconds, send a random number to "temp/random"

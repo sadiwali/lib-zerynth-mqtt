@@ -1,27 +1,13 @@
 .. module:: mqtt
 
-====
-MQTT
-====
+************
+MQTT Library
+************
 
 This module contains an implementation of the MQTT protocol (client-side) based on the work
 of Roger Light <roger@atchoo.org> from the `paho-project <https://eclipse.org/paho/>`_.
 
-"*MQTT is a publish-subscribe based lightweight messaging protocol for use on top of the TCP/IP protocol.
-[...] The publish-subscribe messaging pattern requires a message broker. The broker is responsible for
-distributing messages to interested clients based on the topic of a message.*" (from Wikipedia)
-
-So a client must connect to a broker in order to:
-
-    * **publish** messages specifying a topic so that other clients that have subscribed to that topic
-      will be able to receive those messages;
-    * receive messages **subscribing** to a specific topic.
-
-To clarify this behaviour imagine a home network of temperature sensors and controllers where
-each temperature sensor publishes sampled data on 'home/nameOfRoom' channel and the home
-temperature controller subscribes to all channels to achieve a smart heating.
-
-When publishing and subscribing a client is able to specify a quality of service (QoS) level
+When publishing and subscribing, a client is able to specify a quality of service (QoS) level
 for messages which activates procedures to assure a message to be actually delivered or
 received, available levels are:
 
@@ -29,8 +15,7 @@ received, available levels are:
     * 1 - at least once
     * 2 - exactly once
 
-Resource clearly explaining the QoS feature:
-`mqtt-quality-of-service-levels <http://www.hivemq.com/blog/mqtt-essentials-part-6-mqtt-quality-of-service-levels>`_
+.. note:: Resource clearly explaining the QoS feature: `mqtt-quality-of-service-levels <http://www.hivemq.com/blog/mqtt-essentials-part-6-mqtt-quality-of-service-levels>`_
 
 Back to the implementation Zerynth mqtt.Client class provides methods to:
 
@@ -78,19 +63,19 @@ Client class
         my_client = mqtt.Client("myId",True)
         for retry in range(10):
             try:
-                client.connect("test.mosquitto.org", 60)
+                my_client.connect("test.mosquitto.org", 60)
                 break
             except Exception as e:
                 print("connecting...")
         my_client.subscribe([["cool/channel",1]])
-        my_client.on("PUBLISH",print_cool_stuff,is_cool)
+        my_client.on(mqtt.PUBLISH, print_cool_stuff, is_cool)
         my_client.loop()
 
         # do something else...
 
     Details about the callback system under :func:`~mqtt.Client.on` method.
     
-.. method:: __init__(client_id, clean_session = True)
+.. method:: __init__(client_id, clean_session=True)
 
     * *client_id* is the unique client id string used when connecting to the
       broker.
@@ -104,9 +89,21 @@ Client class
       accidentally disconnected: calling reconnect() will cause the messages to
       be resent.
         
-.. method:: on(command, function, condition = None, priority = 0)
+.. method:: on(command, function, condition=None, priority=0)
 
-    * *command* is a string referring to which MQTT command call the callback on.
+    Set a callback in response to an MQTT received command.
+
+    * *command* is a constant referring to which MQTT command call the callback on, can be one of::
+
+        mqtt.PUBLISH
+        mqtt.PUBACK
+        mqtt.PUBREC
+        mqtt.PUBREL
+        mqtt.PUBCOMP
+        mqtt.SUBACK
+        mqtt.UNSUBACK
+        mqtt.PINGREQ
+        mqtt.PINGRESP
 
     * *function* is the function to execute if *condition* is respected.
       It takes both the client itself and a *data* dictionary as parameters.
@@ -140,16 +137,24 @@ Client class
                 if ('message' in data):
                     print("not cool: ", data['message'].payload)
 
-            my_client.on("PUBLISH", print_cool_stuff, is_cool)
-            my_client.on("PUBLISH", print_generic_stuff)
+            my_client.on(mqtt.PUBLISH, print_cool_stuff, is_cool)
+            my_client.on(mqtt.PUBLISH, print_generic_stuff)
 
 
         In the above example for every PUBLISH packet it is checked if the topic
         is *cool*, only if this condition fails, *print_generic_stuff* gets executed.
         
-.. method:: connect(host, keepalive, port = 1883)
+.. method:: set_will(topic, payload, qos, retain)
 
-    Connect to a remote broker.
+    Set client will.
+        
+.. method:: set_username_pw(username, password = None)
+
+    Set connection username and password.
+        
+.. method:: connect(host, keepalive, port=1883)
+
+    Connects to a remote broker.
 
     * *host* is the hostname or IP address of the remote broker.
     * *port* is the network port of the server host to connect to. Defaults to
@@ -157,14 +162,15 @@ Client class
     * *keepalive* is the maximum period in seconds between communications with the
       broker. If no other messages are being exchanged, this controls the
       rate at which the client will send ping messages to the broker.
+    * *ssl_ctx* is an optional ssl context (:ref:`Zerynth SSL module <ssl>`) for secure mqtt channels.
         
 .. method:: reconnect()
 
-    Reconnect the client if accidentally disconnected.
+    Reconnects the client if accidentally disconnected.
         
 .. method:: subscribe(topics)
 
-    Subscribe to one or more topics.
+    Subscribes to one or more topics.
 
     * *topis* a list structured this way::
 
@@ -175,13 +181,13 @@ Client class
         
 .. method:: unsubscribe(topics)
 
-    Unsubscribe the client from one or more topics.
+    Unsubscribes the client from one or more topics.
 
     * *topics* is list of strings that are subscribed topics to unsubscribe from.
         
-.. method:: publish(topic, payload = None, qos = 0, retain = False)
+.. method:: publish(topic, payload=None, qos=0, retain=False)
 
-    Publish a message on a topic.
+    Publishes a message on a topic.
 
     This causes a message to be sent to the broker and subsequently from
     the broker to any clients subscribing to matching topics.
@@ -198,7 +204,7 @@ Client class
     
 .. method:: reconnect()
 
-    Send a disconnect message.
+    Sends a disconnect message.
         
 .. method:: loop(on_message = None)
 

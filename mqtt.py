@@ -1,4 +1,4 @@
-# Copyright (c) 2015 Viper Team <www.viperize.it>
+# Copyright (c) 2017 Zerynth Team <http://www.zerynth.com/>
 #
 # All rights reserved. This program and the accompanying materials
 # are made available under the terms of the Eclipse Public License v1.0
@@ -8,35 +8,18 @@
 #    http://www.eclipse.org/legal/epl-v10.html
 # and the Eclipse Distribution License is available at
 #   http://www.eclipse.org/org/documents/edl-v10.php.
-#
-# Contributors:
-#    Lorenzo Rizzello - adaptation of mqtt paho-project module
 
 """
 .. module:: mqtt
 
-====
-MQTT
-====
+************
+MQTT Library
+************
 
 This module contains an implementation of the MQTT protocol (client-side) based on the work
 of Roger Light <roger@atchoo.org> from the `paho-project <https://eclipse.org/paho/>`_.
 
-"*MQTT is a publish-subscribe based lightweight messaging protocol for use on top of the TCP/IP protocol.
-[...] The publish-subscribe messaging pattern requires a message broker. The broker is responsible for
-distributing messages to interested clients based on the topic of a message.*" (from Wikipedia)
-
-So a client must connect to a broker in order to:
-
-    * **publish** messages specifying a topic so that other clients that have subscribed to that topic
-      will be able to receive those messages;
-    * receive messages **subscribing** to a specific topic.
-
-To clarify this behaviour imagine a home network of temperature sensors and controllers where
-each temperature sensor publishes sampled data on 'home/nameOfRoom' channel and the home
-temperature controller subscribes to all channels to achieve a smart heating.
-
-When publishing and subscribing a client is able to specify a quality of service (QoS) level
+When publishing and subscribing, a client is able to specify a quality of service (QoS) level
 for messages which activates procedures to assure a message to be actually delivered or
 received, available levels are:
 
@@ -44,10 +27,9 @@ received, available levels are:
     * 1 - at least once
     * 2 - exactly once
 
-Resource clearly explaining the QoS feature:
-`mqtt-quality-of-service-levels <http://www.hivemq.com/blog/mqtt-essentials-part-6-mqtt-quality-of-service-levels>`_
+.. note:: Resource clearly explaining the QoS feature: `mqtt-quality-of-service-levels <http://www.hivemq.com/blog/mqtt-essentials-part-6-mqtt-quality-of-service-levels>`_
 
-Back to the implementation Viper mqtt.Client class provides methods to:
+Back to the implementation Zerynth mqtt.Client class provides methods to:
 
     * connect to a broker
     * publish
@@ -63,8 +45,9 @@ and a system of **callbacks** to handle incoming packets.
 import socket
 import threading
 import timers
-from wireless import wifi
 import streams
+
+import ssl
 
 MQTTv311 = 4
 PROTOCOL_NAMEv311 = "MQTT"
@@ -72,53 +55,39 @@ PROTOCOL_NAMEv311 = "MQTT"
 PORT = 1883
 
 # Message types
-CONNECT = 16 # 0x10
-CONNACK = 32 # 0x20
-PUBLISH = 48 # 0x30
-PUBACK = 64 # 0x40
-PUBREC = 80 # 0x50
-PUBREL = 96 # 0x60
-PUBCOMP = 112 # 0x70
-SUBSCRIBE = 128 # 0x80
-SUBACK = 144 # 0x90
-UNSUBSCRIBE = 160 # 0xA0
-UNSUBACK = 176 # 0xB0
-PINGREQ = 192 # 0xC0
-PINGRESP = 208 # 0xD0
-DISCONNECT = 224 # 0xE0
-
-STR_COMMANDS = {
-    "CONNECT": CONNECT,
-    "CONNACK": CONNACK,
-    "PUBLISH": PUBLISH,
-    "PUBACK": PUBACK,
-    "PUBREC": PUBREC,
-    "PUBREL": PUBREL,
-    "PUBCOMP": PUBCOMP,
-    "SUBSCRIBE": SUBSCRIBE,
-    "SUBACK": SUBACK,
-    "UNSUBSCRIBE": UNSUBSCRIBE,
-    "UNSUBACK": UNSUBACK,
-    "PINGREQ": PINGREQ,
-    "PINGRESP": PINGRESP,
-    "DISCONNECT": DISCONNECT
-}
+CONNECT = 0x10
+CONNACK = 0x20
+PUBLISH = 0x30
+PUBACK = 0x40
+PUBREC = 0x50
+PUBREL = 0x60
+PUBCOMP = 0x70
+SUBSCRIBE = 0x80
+SUBACK = 0x90
+UNSUBSCRIBE = 0xA0
+UNSUBACK = 0xB0
+PINGREQ = 0xC0
+PINGRESP = 0xD0
+DISCONNECT = 0xE0
 
 
 # kept from paho-mqtt code even if not used
-
 # CONNACK codes
-CONNACK_ACCEPTED = 0
-CONNACK_REFUSED_PROTOCOL_VERSION = 1
-CONNACK_REFUSED_IDENTIFIER_REJECTED = 2
-CONNACK_REFUSED_SERVER_UNAVAILABLE = 3
-CONNACK_REFUSED_BAD_USERNAME_PASSWORD = 4
-CONNACK_REFUSED_NOT_AUTHORIZED = 5
+# CONNACK_ACCEPTED = 0
+# CONNACK_REFUSED_PROTOCOL_VERSION = 1
+# CONNACK_REFUSED_IDENTIFIER_REJECTED = 2
+# CONNACK_REFUSED_SERVER_UNAVAILABLE = 3
+# CONNACK_REFUSED_BAD_USERNAME_PASSWORD = 4
+# CONNACK_REFUSED_NOT_AUTHORIZED = 5
 
 # Connection state
 mqtt_cs_new = 0
 mqtt_cs_connected = 1
 mqtt_cs_disconnecting = 2
+mqtt_cs_disconnected = 3
+mqtt_cs_reconnecting = 4
+
+reconnection_max_retry = 25
 
 # Message state
 mqtt_ms_invalid = 0
@@ -132,22 +101,25 @@ mqtt_ms_wait_for_pubcomp = 7
 mqtt_ms_send_pubrec = 8
 
 # Error values
-MQTT_ERR_AGAIN = -1
+# MQTT_ERR_AGAIN = -1
 MQTT_ERR_SUCCESS = 0
-MQTT_ERR_NOMEM = 1
-MQTT_ERR_PROTOCOL = 2
-MQTT_ERR_INVAL = 3
-MQTT_ERR_NO_CONN = 4
-MQTT_ERR_CONN_REFUSED = 5
-MQTT_ERR_NOT_FOUND = 6
-MQTT_ERR_CONN_LOST = 7
-MQTT_ERR_TLS = 8
-MQTT_ERR_PAYLOAD_SIZE = 9
-MQTT_ERR_NOT_SUPPORTED = 10
-MQTT_ERR_AUTH = 11
-MQTT_ERR_ACL_DENIED = 12
-MQTT_ERR_UNKNOWN = 13
-MQTT_ERR_ERRNO = 14
+# MQTT_ERR_NOMEM = 1
+# MQTT_ERR_PROTOCOL = 2
+# MQTT_ERR_INVAL = 3
+# MQTT_ERR_NO_CONN = 4
+# MQTT_ERR_CONN_REFUSED = 5
+# MQTT_ERR_NOT_FOUND = 6
+# MQTT_ERR_CONN_LOST = 7
+# MQTT_ERR_TLS = 8
+# MQTT_ERR_PAYLOAD_SIZE = 9
+# MQTT_ERR_NOT_SUPPORTED = 10
+# MQTT_ERR_AUTH = 11
+# MQTT_ERR_ACL_DENIED = 12
+# MQTT_ERR_UNKNOWN = 13
+# MQTT_ERR_ERRNO = 14
+
+GENERIC_CBK  = 0
+SPECIFIC_CBK = 1
 
 new_exception(MQTTError,Exception)
 new_exception(MQTTConnectionError,MQTTError)
@@ -159,11 +131,6 @@ def print_d(*args):
     if debug:
         print(*args)
 
-def _del(m_list,i):
-    if (type(i) == 0):
-        return [ m_list[t] for t in range(len(m_list)) if t != i ]
-    elif type(i) == PLIST:
-        return [ m_list[t] for t in range(len(m_list)) if t not in i ]
 
 def _append16(b_array, val):
     if val < 256:
@@ -176,6 +143,20 @@ def _unpack16(b_array, index):
     t = b_array[index+1] + b_array[index]
     return (t, index+2)
 
+class inpacket:
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.command = 0
+        self.have_remaining = 0
+        self.remaining_count = []
+        self.remaining_mult = 1
+        self.remaining_length = 0
+        self.packet = bytearray()
+        self.to_process = 0
+        self.pos = 0
+        self.data = {}
 
 class MQTTMessage:
     """
@@ -225,12 +206,12 @@ Client class
         my_client = mqtt.Client("myId",True)
         for retry in range(10):
             try:
-                client.connect("test.mosquitto.org", 60)
+                my_client.connect("test.mosquitto.org", 60)
                 break
             except Exception as e:
                 print("connecting...")
         my_client.subscribe([["cool/channel",1]])
-        my_client.on("PUBLISH",print_cool_stuff,is_cool)
+        my_client.on(mqtt.PUBLISH, print_cool_stuff, is_cool)
         my_client.loop()
 
         # do something else...
@@ -238,9 +219,9 @@ Client class
     Details about the callback system under :func:`~mqtt.Client.on` method.
     """
 
-    def __init__(self, client_id, clean_session = True):
+    def __init__(self, client_id, clean_session=True, logfn=None):
         """
-.. method:: __init__(client_id, clean_session = True)
+.. method:: __init__(client_id, clean_session=True)
 
     * *client_id* is the unique client id string used when connecting to the
       broker.
@@ -278,7 +259,7 @@ Client class
 
         self._ping_t = 0
 
-        self._reset_in_packet()
+        self._in_packet = inpacket()
 
         self._in_messages = []
         self._in_message_lock = threading.Lock()
@@ -286,15 +267,42 @@ Client class
         self._out_messages = []
         self._out_message_lock = threading.Lock()
 
-        self._callbacks = { 'generic': {}, 'specific': [] }
+        self._callbacks = [ {}, [] ]
 
         self._message_retry = 20000
 
-    def on(self,command,function,condition = None, priority = 0):
-        """
-.. method:: on(command, function, condition = None, priority = 0)
+        self._reconnection_event = threading.Event()
+        self._reconnection_retry = reconnection_max_retry
 
-    * *command* is a string referring to which MQTT command call the callback on.
+        self.logfn = self._nolog
+        if logfn is not None:
+            self.logfn = logfn
+
+        self._is_closed = False
+
+    # def _nolog(self,*args):
+    #     pass
+
+    def _nolog(self,logstr):
+        pass
+
+    def on(self,command,function,condition=None, priority=0):
+        """
+.. method:: on(command, function, condition=None, priority=0)
+
+    Set a callback in response to an MQTT received command.
+
+    * *command* is a constant referring to which MQTT command call the callback on, can be one of::
+
+        mqtt.PUBLISH
+        mqtt.PUBACK
+        mqtt.PUBREC
+        mqtt.PUBREL
+        mqtt.PUBCOMP
+        mqtt.SUBACK
+        mqtt.UNSUBACK
+        mqtt.PINGREQ
+        mqtt.PINGRESP
 
     * *function* is the function to execute if *condition* is respected.
       It takes both the client itself and a *data* dictionary as parameters.
@@ -328,36 +336,44 @@ Client class
                 if ('message' in data):
                     print("not cool: ", data['message'].payload)
 
-            my_client.on("PUBLISH", print_cool_stuff, is_cool)
-            my_client.on("PUBLISH", print_generic_stuff)
+            my_client.on(mqtt.PUBLISH, print_cool_stuff, is_cool)
+            my_client.on(mqtt.PUBLISH, print_generic_stuff)
 
 
         In the above example for every PUBLISH packet it is checked if the topic
         is *cool*, only if this condition fails, *print_generic_stuff* gets executed.
         """
-        if type(command) == PSTRING:
-            command = STR_COMMANDS[command]
         # generic => no condition, lowest priority
         if condition:
-            self._callbacks['specific'].append([command,condition,function,priority])
+            self._callbacks[SPECIFIC_CBK].append([command,condition,function,priority])
         else:
-            self._callbacks['generic'][command] = function
+            self._callbacks[GENERIC_CBK][command] = function
 
     def set_will(self, topic, payload, qos, retain):
+        """
+.. method:: set_will(topic, payload, qos, retain)
+
+    Set client will.
+        """
         self._will_topic = topic
         self._will_payload = payload
         self._will_qos = qos
         self._will_retain = retain
 
     def set_username_pw(self, username, password=None):
+        """
+.. method:: set_username_pw(username, password = None)
+
+    Set connection username and password.
+        """
         self._username = username
         self._password = password
 
-    def connect(self, host, keepalive, port = PORT):
+    def connect(self, host, keepalive, port=PORT, ssl_ctx=None, breconnect_cb=None, aconnect_cb=None):
         """
-.. method:: connect(host, keepalive, port = 1883)
+.. method:: connect(host, keepalive, port=1883)
 
-    Connect to a remote broker.
+    Connects to a remote broker.
 
     * *host* is the hostname or IP address of the remote broker.
     * *port* is the network port of the server host to connect to. Defaults to
@@ -365,12 +381,37 @@ Client class
     * *keepalive* is the maximum period in seconds between communications with the
       broker. If no other messages are being exchanged, this controls the
       rate at which the client will send ping messages to the broker.
+    * *ssl_ctx* is an optional ssl context (:ref:`Zerynth SSL module <stdlib.ssl>`) for secure mqtt channels.
         """
+        # to allow defining inherited clients with different connect 
+        # functions but preserving reconnection functionality
+        self._connect(host, keepalive, port=port, ssl_ctx=ssl_ctx, breconnect_cb=breconnect_cb, aconnect_cb=aconnect_cb)
+
+    def _connect(self, host, keepalive, port=PORT, ssl_ctx=None, breconnect_cb=None, aconnect_cb=None):
+        self._before_reconnect = breconnect_cb
+        self._after_connect  = aconnect_cb
+
         self._host = host
         self._port = port
         ip = __default_net["sock"][0].gethostbyname(host)
-        self._sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-        self._sock.connect((ip,port))
+
+        self._ssl_ctx = ssl_ctx
+        if ssl_ctx is None:
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        else:
+            self._sock = ssl.sslsocket(ctx=ssl_ctx)
+
+        try:
+            self._sock.settimeout(keepalive*1000)
+        except UnsupportedError:
+            # no timeout, no keepalive
+            pass
+
+        try:
+            self._sock.connect((ip,port))
+        except Exception as e:
+            self._sock.close()
+            raise e
 
         # protocol_name(str) + protocol_level + flags + keepalive + client_id(str)
         remaining_length = 2+4 + 1+1+2 + 2+len(self._client_id)
@@ -426,6 +467,8 @@ Client class
         self._handle_connack()
         self._update_last_activity()
 
+        if self._after_connect is not None:
+            self._after_connect(self)
 
         rc = 0
 
@@ -469,21 +512,46 @@ Client class
         """
 .. method:: reconnect()
 
-    Reconnect the client if accidentally disconnected.
+    Reconnects the client if accidentally disconnected.
         """
-        self._reset_in_packet()
-        self._update_last_activity()
-        self._ping_t = 0
+        if self._is_closed:
+            while True:
+                # DO NOT DIE FOR ESP32, REMOVE!
+                sleep(1000)
+        self._sock.close()
+        while True:
 
-        self._messages_reconnect_reset()
+            if self._reconnection_retry < 0:
+                self._reconnection_event.set()
+                raise MQTTConnectionError
 
-        self.connect(self._host,self.keepalive,self._port)
+            self._reconnection_event.clear()
+            self._state = mqtt_cs_reconnecting
+
+            self._reset_in_packet()
+            self._update_last_activity()
+            self._ping_t = 0
+
+            self._messages_reconnect_reset()
+
+            if self._before_reconnect is not None:
+                self._before_reconnect(self)
+
+            try:
+                self._connect(self._host,self.keepalive,self._port, ssl_ctx=self._ssl_ctx,
+                    breconnect_cb=self._before_reconnect, aconnect_cb=self._after_connect)
+                self._reconnection_retry = reconnection_max_retry
+                self._reconnection_event.set()
+                break
+            except Exception as e:
+                self._state = mqtt_cs_disconnected
+                self._reconnection_retry -= 1
 
     def subscribe(self,topics):
         """
 .. method:: subscribe(topics)
 
-    Subscribe to one or more topics.
+    Subscribes to one or more topics.
 
     * *topis* a list structured this way::
 
@@ -511,7 +579,7 @@ Client class
         """
 .. method:: unsubscribe(topics)
 
-    Unsubscribe the client from one or more topics.
+    Unsubscribes the client from one or more topics.
 
     * *topics* is list of strings that are subscribed topics to unsubscribe from.
         """
@@ -529,11 +597,11 @@ Client class
             self._pack_str16(packet, t)
         self._safe_send(packet)
 
-    def publish(self, topic, payload = None, qos = 0, retain = False):
+    def publish(self, topic, payload=None, qos=0, retain=False):
         """
-.. method:: publish(topic, payload = None, qos = 0, retain = False)
+.. method:: publish(topic, payload=None, qos=0, retain=False)
 
-    Publish a message on a topic.
+    Publishes a message on a topic.
 
     This causes a message to be sent to the broker and subsequently from
     the broker to any clients subscribing to matching topics.
@@ -584,7 +652,7 @@ Client class
         """
 .. method:: reconnect()
 
-    Send a disconnect message.
+    Sends a disconnect message.
         """
         # self._state_lock.acquire()
         # self._state = mqtt_cs_disconnecting
@@ -595,7 +663,11 @@ Client class
 
         return self._send_disconnect()
 
-    def loop(self, on_message = None):
+    def close(self):
+        self._is_closed = True
+        self._sock.close()
+
+    def loop(self, on_message=None, th_size=-1):
         """
 .. method:: loop(on_message = None)
 
@@ -610,33 +682,37 @@ Client class
                 # data['message'] is not present if publish handled has qos = 2
                 return ('message' in data)
             self.on(PUBLISH,on_message,qos_not_2,-1)
-        thread(self._do_loop)
+        thread(self._do_loop, size=th_size)
 
 
     def _do_loop(self):
+        should_reconnect = False
         while True:
-            print_d("enter select...")
-            select_enter = timers.now()
             try:
-                rr,ww,xx = wifi.select([self._sock],[],[],self.keepalive*1000)
-            except IOError:
-                # of course it causes problems when reconnecting from safe_send
-                # after connection lost
-                self.reconnect()
-                continue
-            if rr:
                 self._read_packet()
 
                 self._message_retry_check()
-            else:
+            except TimeoutError:
                 if timers.now() > self._last_activity + self.keepalive*1500:
                     print_d("la + ka", self._last_activity + self.keepalive*1500)
                     # out packet sent, but no response in keepalive time -> try reconnecting
                     # includes ping resp not received self._ping_t != 0
-                    self.reconnect()
+                    should_reconnect = True
                 else:
                     print_d("send ping")
                     self._send_pingreq()
+            except IOError:
+                should_reconnect = True
+
+            if should_reconnect:
+                should_reconnect = False
+
+                if self._state == mqtt_cs_reconnecting:
+                    self._reconnection_event.wait()
+                else:
+                    self._state = mqtt_cs_disconnected
+                    self.reconnect()
+
 
     def _handle_connack(self):
         pack_type = self._sock.recv(1)[0]
@@ -657,37 +733,43 @@ Client class
             raise MQTTProtocolError
 
     def _read_packet(self):
-        self._in_packet["command"] = self._sock.recv(1)[0]
-        print_d("command: ",self._in_packet["command"])
+        self.logfn('receiving command')
+        self._in_packet.command = self._sock.recv(1)[0]
+        self.logfn('command: ' + str(self._in_packet.command))
+
         while True:
             byte = self._sock.recv(1)[0]
-            self._in_packet['remaining_count'].append(byte)
+            self._in_packet.remaining_count.append(byte)
             # Max 4 bytes length for remaining length as defined by protocol.
             # Anything more likely means a broken/malicious client.
-            if len(self._in_packet['remaining_count']) > 4:
+            if len(self._in_packet.remaining_count) > 4:
                 raise MQTTProtocolError
 
-            self._in_packet['remaining_length'] = self._in_packet['remaining_length'] + (byte & 127)*self._in_packet['remaining_mult']
-            self._in_packet['remaining_mult'] = self._in_packet['remaining_mult'] * 128
+            self._in_packet.remaining_length = self._in_packet.remaining_length + (byte & 127)*self._in_packet.remaining_mult
+            self._in_packet.remaining_mult = self._in_packet.remaining_mult * 128
 
             if (byte & 128) == 0:
                 break
 
-        self._in_packet['have_remaining'] = 1
-        self._in_packet['to_process'] = self._in_packet['remaining_length']
+        self._in_packet.have_remaining = 1
+        self._in_packet.to_process = self._in_packet.remaining_length
 
-        while self._in_packet['to_process'] > 0:
-            data = self._sock.recv(self._in_packet['to_process'])
-            self._in_packet['to_process'] = self._in_packet['to_process'] - len(data)
-            self._in_packet['packet'] = self._in_packet['packet'] + data
+        self._in_packet.packet = bytearray(self._in_packet.to_process)
+        cur_process = 0
+        while self._in_packet.to_process > 0:
+            data = self._sock.recv(self._in_packet.to_process)
+            self._in_packet.to_process = self._in_packet.to_process - len(data)
+            self._in_packet.packet[cur_process:cur_process+len(data)] = data
+            cur_process += len(data)
 
+        self.logfn('ready to handle packet')
         # All data for this packet is read.
-        self._in_packet['pos'] = 0
+        self._in_packet.pos = 0
         try:
             self._handle_packet()
         except Exception as e:
             print_d(e)
-        print_d("packet handled")
+        self.logfn('packet handled')
 
         self._update_last_activity()
 
@@ -695,24 +777,24 @@ Client class
         try:
             to_execute = None
             exe_priority = -100
-            for c in self._callbacks['specific']:
+            for c in self._callbacks[SPECIFIC_CBK]:
                 # c is a list [command,condition,function,priority]
                 if exe_priority >= c[3]:
                     continue
-                if (self._in_packet['command'] & 0xF0) == c[0]:
-                    if c[1](self._in_packet['data']):
+                if (self._in_packet.command & 0xF0) == c[0]:
+                    if c[1](self._in_packet.data):
                         # if succeeds executing a specific, skips generic
-                        # ex. condition: data['message'].mid == my_mid => execute specific
+                        # e.g. condition: data['message'].mid == my_mid => execute specific
                         # callback for this mid
                         to_execute = c[2]
                         exe_priority = c[3]
 
             if to_execute != None:
-                to_execute(self, self._in_packet['data'])
+                to_execute(self, self._in_packet.data)
             else:
-                for cmd,callback in self._callbacks['generic'].items():
-                    if (self._in_packet['command'] & 0xF0) == cmd:
-                        callback(self, self._in_packet['data'])
+                for cmd,callback in self._callbacks[GENERIC_CBK].items():
+                    if (self._in_packet.command & 0xF0) == cmd:
+                        callback(self, self._in_packet.data)
         except Exception as ex:
             print_d(ex)
         ######
@@ -726,15 +808,15 @@ Client class
         # return rc
 
     def _handle_packet(self):
-        cmd = self._in_packet['command'] & 0xF0
+        cmd = self._in_packet.command & 0xF0
         if cmd == PINGREQ:
             self._handle_pingreq()
         elif cmd == PINGRESP:
             self._handle_pingresp()
         elif cmd == PUBACK:
-            self._handle_pubackcomp("PUBACK")
+            self._handle_pubackcomp()
         elif cmd == PUBCOMP:
-            self._handle_pubackcomp("PUBCOMP")
+            self._handle_pubackcomp()
         elif cmd == PUBLISH:
             self._handle_publish()
         elif cmd == PUBREC:
@@ -751,14 +833,14 @@ Client class
 
     def _handle_pingresp(self):
         print_d("reading response...")
-        if self._in_packet['remaining_length'] != 0:
+        if self._in_packet.remaining_length != 0:
             raise MQTTProtocolError
         self._ping_t = 0
         # return MQTT_ERR_SUCCESS
-        self._in_packet['data']['return_code'] = MQTT_ERR_SUCCESS
+        self._in_packet.data['return_code'] = MQTT_ERR_SUCCESS
 
     def _handle_publish(self):
-        header = self._in_packet['command']
+        header = self._in_packet.command
         message = MQTTMessage()
         message.dup = (header & 0x08)>>3
         message.qos = (header & 0x06)>>1
@@ -770,20 +852,17 @@ Client class
             raise MQTTProtocolError
 
         if message.qos > 0:
-            message.mid, c_pos = _unpack16(self._in_packet['packet'], c_pos)
+            message.mid, c_pos = _unpack16(self._in_packet.packet, c_pos)
 
-        for i in range(c_pos,len(self._in_packet['packet'])):
-            message.payload += chr(self._in_packet['packet'][i])
-
-
+        message.payload = str(self._in_packet.packet[c_pos:])
         message.timestamp = timers.now()
         if message.qos == 0:
-            self._in_packet['data']['message'] = message
-            self._in_packet['data']['return_code'] = MQTT_ERR_SUCCESS
+            self._in_packet.data['message'] = message
+            self._in_packet.data['return_code'] = MQTT_ERR_SUCCESS
         elif message.qos == 1:
             self._send_puback(message.mid)
-            self._in_packet['data']['message'] = message
-            self._in_packet['data']['return_code'] = MQTT_ERR_SUCCESS
+            self._in_packet.data['message'] = message
+            self._in_packet.data['return_code'] = MQTT_ERR_SUCCESS
         elif message.qos == 2:
             self._send_pubrec(message.mid)
             print_d("pubrec sent",message.mid)
@@ -791,18 +870,18 @@ Client class
             self._in_message_lock.acquire()
             self._in_messages.append(message)
             self._in_message_lock.release()
-            self._in_packet['data']['return_code'] = MQTT_ERR_SUCCESS
+            self._in_packet.data['return_code'] = MQTT_ERR_SUCCESS
         else:
             raise MQTTProtocolError
 
     def _handle_pubrel(self):
-        if self._in_packet['remaining_length'] != 2:
+        if self._in_packet.remaining_length != 2:
             raise MQTTProtocolError
 
-        if len(self._in_packet['packet']) != 2:
+        if len(self._in_packet.packet) != 2:
             raise MQTTProtocolError
 
-        mid,z = _unpack16(self._in_packet['packet'],0)
+        mid,z = _unpack16(self._in_packet.packet,0)
         print_d("rec PUBREL (mid: "+str(mid)+")")
 
         self._in_message_lock.acquire()
@@ -813,19 +892,19 @@ Client class
                 sel_i = i
         if sel_i != None:
             m = self._in_messages[sel_i]
-            self._in_messages = _del(self._in_messages,sel_i)
+            del self._in_messages[sel_i]
         self._in_message_lock.release()
         if sel_i != None:
-            self._in_packet['data']['message'] = m
+            self._in_packet.data['message'] = m
             print_d("send pubcomp")
             self._send_pubcomp(mid)
-        self._in_packet['data']['return_code'] = MQTT_ERR_SUCCESS
+        self._in_packet.data['return_code'] = MQTT_ERR_SUCCESS
 
-    def _handle_pubackcomp(self, cmd):
-        if self._in_packet['remaining_length'] != 2:
+    def _handle_pubackcomp(self):
+        if self._in_packet.remaining_length != 2:
             raise MQTTProtocolError
 
-        mid, z = _unpack16(self._in_packet['packet'],0)
+        mid, z = _unpack16(self._in_packet.packet,0)
 
         self._out_message_lock.acquire()
         sel_i = None
@@ -835,15 +914,15 @@ Client class
                 sel_i = i
         if sel_i:
             m = self._out_messages[sel_i]
-            self._out_messages = _del(self._out_messages,sel_i)
+            del self._out_messages[sel_i]
         self._out_message_lock.release()
 
-        self._in_packet['data']['return_code'] = MQTT_ERR_SUCCESS
+        self._in_packet.data['return_code'] = MQTT_ERR_SUCCESS
 
     def _handle_pubrec(self):
-        if self._in_packet['remaining_length'] != 2:
+        if self._in_packet.remaining_length != 2:
             raise MQTTProtocolError
-        mid, z = _unpack16(self._in_packet['packet'],0)
+        mid, z = _unpack16(self._in_packet.packet,0)
         print_d("Rec PUBREC mid:",mid)
         self._out_message_lock.acquire()
         for m in self._out_messages:
@@ -854,32 +933,38 @@ Client class
                 return self._send_pubrel(mid, False)
 
         self._out_message_lock.release()
-        self._in_packet['data']['return_code'] = MQTT_ERR_SUCCESS
+        self._in_packet.data['return_code'] = MQTT_ERR_SUCCESS
 
     def _handle_suback(self):
         print_d("Rec SUBACK")
-        mid, c_pos = _unpack16(self._in_packet['packet'],0)
-        granted_qos = self._in_packet['packet'][c_pos]
+        mid, c_pos = _unpack16(self._in_packet.packet,0)
+        granted_qos = self._in_packet.packet[c_pos]
 
         print_d("rec mid:", mid)
-        self._in_packet['data']['mid'] = mid
-        self._in_packet['data']['granted_qos'] = granted_qos
-        self._in_packet['data']['return_code'] = MQTT_ERR_SUCCESS
+        self._in_packet.data['mid'] = mid
+        self._in_packet.data['granted_qos'] = granted_qos
+        self._in_packet.data['return_code'] = MQTT_ERR_SUCCESS
 
     def _handle_unsuback(self):
-        if self._in_packet['remaining_length'] != 2:
+        if self._in_packet.remaining_length != 2:
             raise MQTTProtocolError
 
-        mid, z = _unpack16(self._in_packet['packet'],0)
-        self._in_packet['data']['mid'] = mid
-        self._in_packet['data']['return_code'] = MQTT_ERR_SUCCESS
+        mid, z = _unpack16(self._in_packet.packet,0)
+        self._in_packet.data['mid'] = mid
+        self._in_packet.data['return_code'] = MQTT_ERR_SUCCESS
 
     def _safe_send(self, packet):
+        if self._state == mqtt_cs_reconnecting:
+            self._reconnection_event.wait()
+        if self._state != mqtt_cs_connected:
+            raise MQTTConnectionError
+
         self._out_lock.acquire()
         try:
             self._sock.sendall(packet)
         except IOError:
             print_d("ioerror")
+            self._state = mqtt_cs_disconnected
             # try reconnecting
             self.reconnect()
         self._out_lock.release()
@@ -914,11 +999,9 @@ Client class
 
     def _send_simple_command(self, command):
         # For DISCONNECT, PINGREQ and (???) PINGRESP
-        remaining_length = 0
-        packet = bytearray()
         print_d("cmd:",command)
-        packet.append(command)
-        packet.append(remaining_length)
+        remaining_length = 0
+        packet = bytearray([command, remaining_length])
 
         self._safe_send(packet)
 
@@ -936,9 +1019,7 @@ Client class
             command = command | 8
 
         remaining_length = 2
-        packet = bytearray()
-        packet.append(command)
-        packet.append(remaining_length)
+        packet = bytearray([command, remaining_length])
         _append16(packet,mid)
         self._safe_send(packet)
 
@@ -1007,7 +1088,8 @@ Client class
             else:
                 # Preserve current state
                 pass
-        self._in_messages = _del(self._in_messages,to_del)
+        for td in to_del:
+            del self._in_messages[td]
         self._in_message_lock.release()
 
     def _messages_reconnect_reset(self):
@@ -1042,22 +1124,11 @@ Client class
         packet.extend(data)
 
     def _unpack_str16(self, index):
-        string = ""
-        str_length = self._in_packet['packet'][index+1]
-        str_length += self._in_packet['packet'][index]
-        for i in range(str_length):
-            string += chr(self._in_packet['packet'][index+2+i])
+        str_length = self._in_packet.packet[index+1]
+        str_length += self._in_packet.packet[index]
+        string = str(self._in_packet.packet[index+2:index+2+str_length])
         return (string, index+2+str_length)
 
+
     def _reset_in_packet(self):
-        self._in_packet = {
-            "command": 0,
-            "have_remaining": 0,
-            "remaining_count": [],
-            "remaining_mult": 1,
-            "remaining_length": 0,
-            "packet": bytearray(),
-            "to_process": 0,
-            "pos": 0,
-            "data": {}
-        }
+        self._in_packet.reset()

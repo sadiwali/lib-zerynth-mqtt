@@ -4,5 +4,5 @@
     .. toctree::
        :maxdepth: 2
 
-       mqtt
+       docs_mqtt
 
