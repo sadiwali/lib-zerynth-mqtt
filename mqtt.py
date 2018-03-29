@@ -121,6 +121,11 @@ MQTT_ERR_SUCCESS = 0
 GENERIC_CBK  = 0
 SPECIFIC_CBK = 1
 
+# Last activity update
+LA_OUT = 0
+LA_IN = 1
+LA_BOTH = 2
+
 new_exception(MQTTError,Exception)
 new_exception(MQTTConnectionError,MQTTError)
 new_exception(MQTTProtocolError,MQTTError)
@@ -242,7 +247,8 @@ Client class
 
         # self._last_msg_in = None
         # self._last_msg_out = None
-        self._last_activity = None
+        self._last_activity_in = 0
+        self._last_activity_out = 0
 
         self._will_topic = None
         self._will_payload = None
@@ -256,8 +262,6 @@ Client class
         self._last_activity_lock = threading.Lock()
 
         self._last_mid = 0
-
-        self._ping_t = 0
 
         self._in_packet = inpacket()
 
@@ -369,7 +373,7 @@ Client class
         self._username = username
         self._password = password
 
-    def connect(self, host, keepalive, port=PORT, ssl_ctx=None, breconnect_cb=None, aconnect_cb=None):
+    def connect(self, host, keepalive, port=PORT, ssl_ctx=None, breconnect_cb=None, aconnect_cb=None, sock_keepalive=None):
         """
 .. method:: connect(host, keepalive, port=1883)
 
@@ -382,12 +386,13 @@ Client class
       broker. If no other messages are being exchanged, this controls the
       rate at which the client will send ping messages to the broker.
     * *ssl_ctx* is an optional ssl context (:ref:`Zerynth SSL module <stdlib.ssl>`) for secure mqtt channels.
+    * *sock_keepalive* is a list of int values (3 elements) representing in order count (pure number), idle (in seconds) and interval (in seconds) of the keepalive socket option (default None - disabled). 
         """
         # to allow defining inherited clients with different connect 
         # functions but preserving reconnection functionality
         self._connect(host, keepalive, port=port, ssl_ctx=ssl_ctx, breconnect_cb=breconnect_cb, aconnect_cb=aconnect_cb)
 
-    def _connect(self, host, keepalive, port=PORT, ssl_ctx=None, breconnect_cb=None, aconnect_cb=None):
+    def _connect(self, host, keepalive, port=PORT, ssl_ctx=None, breconnect_cb=None, aconnect_cb=None, sock_keepalive=None):
         self._before_reconnect = breconnect_cb
         self._after_connect  = aconnect_cb
 
@@ -403,9 +408,39 @@ Client class
 
         try:
             self._sock.settimeout(keepalive*1000)
-        except UnsupportedError:
-            # no timeout, no keepalive
+        except Exception as e:
+            print(e)
+            # no timeout
             pass
+
+        if sock_keepalive and len(sock_keepalive) == 3:
+            try:
+                self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            except Exception as e:
+                print(e)
+                # no keepalive
+                pass
+
+            try:
+                self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, sock_keepalive[0])
+            except Exception as e:
+                print(e)
+                # no keepalive
+                pass
+
+            try:
+                self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, sock_keepalive[1])
+            except Exception as e:
+                print(e)
+                # no keepalive
+                pass
+
+            try:
+                self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, sock_keepalive[2])
+            except Exception as e:
+                print(e)
+                # no keepalive
+                pass
 
         try:
             self._sock.connect((ip,port))
@@ -465,7 +500,7 @@ Client class
         self._sock.sendall(packet)
 
         self._handle_connack()
-        self._update_last_activity()
+        self._update_last_activity(LA_BOTH)
 
         if self._after_connect is not None:
             self._after_connect(self)
@@ -529,8 +564,7 @@ Client class
             self._state = mqtt_cs_reconnecting
 
             self._reset_in_packet()
-            self._update_last_activity()
-            self._ping_t = 0
+            self._update_last_activity(LA_BOTH)
 
             self._messages_reconnect_reset()
 
@@ -542,6 +576,8 @@ Client class
                     breconnect_cb=self._before_reconnect, aconnect_cb=self._after_connect)
                 self._reconnection_retry = reconnection_max_retry
                 self._reconnection_event.set()
+
+                self._send_pingreq()
                 break
             except Exception as e:
                 self._state = mqtt_cs_disconnected
@@ -692,16 +728,20 @@ Client class
                 self._read_packet()
 
                 self._message_retry_check()
+
+                if timers.now() > self._last_activity_out + self.keepalive*1000:
+                    print_d("send ping tim_out")
+                    self._send_pingreq()
             except TimeoutError:
-                if timers.now() > self._last_activity + self.keepalive*1500:
-                    print_d("la + ka", self._last_activity + self.keepalive*1500)
-                    # out packet sent, but no response in keepalive time -> try reconnecting
-                    # includes ping resp not received self._ping_t != 0
+                if timers.now() > self._last_activity_in + self.keepalive*1500:
+                    print_d("la + ka", self._last_activity_in + self.keepalive)
+                    # reconnect
                     should_reconnect = True
                 else:
-                    print_d("send ping")
+                    print_d("send ping tim_in")
                     self._send_pingreq()
             except IOError:
+                # reconnect
                 should_reconnect = True
 
             if should_reconnect:
@@ -770,8 +810,7 @@ Client class
         except Exception as e:
             print_d(e)
         self.logfn('packet handled')
-
-        self._update_last_activity()
+        self._update_last_activity(LA_IN)
 
         ######
         try:
@@ -835,8 +874,6 @@ Client class
         print_d("reading response...")
         if self._in_packet.remaining_length != 0:
             raise MQTTProtocolError
-        self._ping_t = 0
-        # return MQTT_ERR_SUCCESS
         self._in_packet.data['return_code'] = MQTT_ERR_SUCCESS
 
     def _handle_publish(self):
@@ -968,8 +1005,8 @@ Client class
             # try reconnecting
             self.reconnect()
         self._out_lock.release()
-        self._update_last_activity()
-        print_d("last activity:", self._last_activity)
+        self._update_last_activity(LA_OUT)
+        print_d("last activity out:", self._last_activity_out)
 
     def _send_publish(self, mid, topic, payload=None, qos=0, retain=False, dup=False):
         command = PUBLISH | ((dup&0x1)<<3) | (qos<<1) | retain
@@ -1010,8 +1047,6 @@ Client class
 
     def _send_pingreq(self):
         self._send_simple_command(PINGREQ)
-        # if rc == MQTT_ERR_SUCCESS:
-        self._ping_t = timers.now()
 
     def _send_command_with_mid(self, command, mid, dup):
         # For PUBACK, PUBCOMP, PUBREC, and PUBREL
@@ -1096,9 +1131,12 @@ Client class
         self._messages_reconnect_reset_out()
         self._messages_reconnect_reset_in()
 
-    def _update_last_activity(self):
+    def _update_last_activity(self, direction):
         self._last_activity_lock.acquire()
-        self._last_activity = timers.now()
+        if direction == LA_OUT or direction == LA_BOTH:
+            self._last_activity_out = timers.now()
+        elif direction == LA_IN or direction == LA_BOTH:
+            self._last_activity_in = timers.now()
         self._last_activity_lock.release()
 
     def _mid_generate(self):
