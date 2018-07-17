@@ -390,7 +390,7 @@ Client class
         """
         # to allow defining inherited clients with different connect 
         # functions but preserving reconnection functionality
-        self._connect(host, keepalive, port=port, ssl_ctx=ssl_ctx, breconnect_cb=breconnect_cb, aconnect_cb=aconnect_cb)
+        self._connect(host, keepalive, port=port, ssl_ctx=ssl_ctx, breconnect_cb=breconnect_cb, aconnect_cb=aconnect_cb, sock_keepalive=sock_keepalive)
 
     def _connect(self, host, keepalive, port=PORT, ssl_ctx=None, breconnect_cb=None, aconnect_cb=None, sock_keepalive=None):
         self._before_reconnect = breconnect_cb
@@ -553,9 +553,10 @@ Client class
             while True:
                 # DO NOT DIE FOR ESP32, REMOVE!
                 sleep(1000)
+        print_d("reconnecting ...", self._reconnection_retry)
         self._sock.close()
         while True:
-
+            print_d("reconnecting ...", self._reconnection_retry)
             if self._reconnection_retry < 0:
                 self._reconnection_event.set()
                 raise MQTTConnectionError
@@ -700,6 +701,7 @@ Client class
         return self._send_disconnect()
 
     def close(self):
+        print_d("mqtt close")
         self._is_closed = True
         self._sock.close()
 
@@ -992,21 +994,23 @@ Client class
 
     def _safe_send(self, packet):
         if self._state == mqtt_cs_reconnecting:
+            print_d("waiting ...")
             self._reconnection_event.wait()
+            print_d("sblocked")
         if self._state != mqtt_cs_connected:
             raise MQTTConnectionError
 
         self._out_lock.acquire()
         try:
             self._sock.sendall(packet)
+            self._update_last_activity(LA_OUT)
+            print_d("last activity out:", self._last_activity_out)
         except IOError:
             print_d("ioerror")
-            self._state = mqtt_cs_disconnected
+            # self._state = mqtt_cs_disconnected
             # try reconnecting
-            self.reconnect()
+            # self.reconnect()
         self._out_lock.release()
-        self._update_last_activity(LA_OUT)
-        print_d("last activity out:", self._last_activity_out)
 
     def _send_publish(self, mid, topic, payload=None, qos=0, retain=False, dup=False):
         command = PUBLISH | ((dup&0x1)<<3) | (qos<<1) | retain
