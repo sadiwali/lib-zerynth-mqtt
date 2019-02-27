@@ -375,17 +375,18 @@ Client class
 
     def connect(self, host, keepalive, port=PORT, ssl_ctx=None, breconnect_cb=None, aconnect_cb=None, sock_keepalive=None):
         """
-.. method:: connect(host, keepalive, port=1883)
+.. method:: connect(host, keepalive, port=1883, ssl_ctx=None, breconnect_cb=None, aconnect_cb=None, sock_keepalive=None)
 
     Connects to a remote broker.
 
     * *host* is the hostname or IP address of the remote broker.
-    * *port* is the network port of the server host to connect to. Defaults to
-      1883.
+    * *port* is the network port of the server host to connect to. Defaults to 1883.
     * *keepalive* is the maximum period in seconds between communications with the
       broker. If no other messages are being exchanged, this controls the
       rate at which the client will send ping messages to the broker.
     * *ssl_ctx* is an optional ssl context (:ref:`Zerynth SSL module <stdlib.ssl>`) for secure mqtt channels.
+    * *breconnect_cb* is an optional callback with actions to be performed before the client tries to reconnect when connection is lost. The callback function will be called passing mqtt client instance.
+    * *aconnect_cb* is an optional callback with actions to be performed after the client successfully connects. The callback function will be called passing mqtt client instance.
     * *sock_keepalive* is a list of int values (3 elements) representing in order count (pure number), idle (in seconds) and interval (in seconds) of the keepalive socket option (default None - disabled). 
         """
         # to allow defining inherited clients with different connect 
@@ -550,9 +551,7 @@ Client class
     Reconnects the client if accidentally disconnected.
         """
         if self._is_closed:
-            while True:
-                # DO NOT DIE FOR ESP32, REMOVE!
-                sleep(1000)
+            return
         print_d("reconnecting ...", self._reconnection_retry)
         self._sock.close()
         while True:
