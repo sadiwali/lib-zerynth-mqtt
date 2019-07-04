@@ -1,0 +1,12 @@
+---
+description: MQTT protocol support
+fullname: lib.zerynth.mqtt
+info:
+    chip_manufacturer: '-'
+    chip_name: '-'
+    name: Zerynth MQTT Library
+    type: Protocol
+keywords:
+- mqtt
+title: MQTT Library
+...
