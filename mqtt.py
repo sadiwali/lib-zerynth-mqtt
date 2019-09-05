@@ -744,6 +744,8 @@ Client class
             except IOError:
                 # reconnect
                 should_reconnect = True
+            except MQTTError:
+                should_reconnect = True
 
             if should_reconnect:
                 should_reconnect = False
@@ -775,7 +777,11 @@ Client class
 
     def _read_packet(self):
         self.logfn('receiving command')
-        self._in_packet.command = self._sock.recv(1)[0]
+        recv_bytes = self._sock.recv(1)
+        if not recv_bytes:
+            # connection closed?
+            raise MQTTError
+        self._in_packet.command = recv_bytes[0]
         self.logfn('command: ' + str(self._in_packet.command))
 
         while True:
@@ -1138,7 +1144,7 @@ Client class
         self._last_activity_lock.acquire()
         if direction == LA_OUT or direction == LA_BOTH:
             self._last_activity_out = timers.now()
-        elif direction == LA_IN or direction == LA_BOTH:
+        if direction == LA_IN or direction == LA_BOTH:
             self._last_activity_in = timers.now()
         self._last_activity_lock.release()
 
