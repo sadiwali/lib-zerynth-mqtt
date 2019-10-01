@@ -747,7 +747,10 @@ Client class
             except MQTTError:
                 should_reconnect = True
 
-            if should_reconnect:
+            if self._is_closed:
+                print_d("exiting...")
+                break
+            elif should_reconnect:
                 should_reconnect = False
 
                 if self._state == mqtt_cs_reconnecting:
