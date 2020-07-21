@@ -145,7 +145,7 @@ def _append16(b_array, val):
     b_array.append(val % 256)
 
 def _unpack16(b_array, index):
-    t = b_array[index+1] + b_array[index]
+    t = b_array[index+1] + (b_array[index]<<8)
     return (t, index+2)
 
 class inpacket:
